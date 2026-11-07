@@ -472,7 +472,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
                         console.error('Recorded video preview playback error:', event.currentTarget.error);
                         setRecordError('This browser could not play the recorded video. Please record again or try another browser.');
                       }}
-                      className="w-full h-full object-contain"
+                      className="w-full h-full transform-none object-contain"
                     />
                   ) : mediaStream ? (
                     // Live camera preview
@@ -481,7 +481,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
                       autoPlay
                       muted
                       playsInline
-                      className={`w-full h-full ${isRecording ? 'object-contain' : 'object-cover'}`}
+                      className={`w-full h-full transform-none ${isRecording ? 'object-contain' : 'object-cover'}`}
                     />
                   ) : (
                     // Camera closed
