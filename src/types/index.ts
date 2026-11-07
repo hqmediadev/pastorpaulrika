@@ -7,6 +7,7 @@ export interface Tribute {
   message: string;
   videoUrl?: string;
   cloudinaryPublicId?: string;
+  cloudinaryPhotoPublicId?: string;
   videoBlobKey?: string;  // key in IndexedDB for offline / local video blobs
   videoDuration?: string;
   photoUrl?: string;      // author photo or memory with Pastor Paul Rika

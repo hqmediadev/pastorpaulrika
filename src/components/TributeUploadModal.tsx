@@ -10,11 +10,18 @@ import {
   AlertCircle, 
   Loader2, 
   Sparkles,
-  Crown
+  Crown,
+  ImagePlus,
+  Upload,
+  Trash2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { playCelebrationChime } from '../utils/audio';
-import { saveVideoBlobLocally, uploadVideoToCloudinary } from '../utils/storage';
+import {
+  saveVideoBlobLocally,
+  uploadPhotoToCloudinary,
+  uploadVideoToCloudinary,
+} from '../utils/storage';
 
 interface TributeUploadModalProps {
   isOpen: boolean;
@@ -36,7 +43,8 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
   const [authorLocation, setAuthorLocation] = useState('');
   const [relationship, setRelationship] = useState('Spiritual Son / Daughter');
   const [message, setMessage] = useState('');
-  const [photoUrl, setPhotoUrl] = useState('');
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
 
   // Recording states
   const [isRecording, setIsRecording] = useState(false);
@@ -57,10 +65,22 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setTab(defaultTab === 'text' ? 'text' : 'video-record');
   }, [defaultTab]);
+
+  useEffect(() => {
+    if (!photoFile) {
+      setPhotoPreviewUrl(null);
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(photoFile);
+    setPhotoPreviewUrl(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [photoFile]);
 
   // Stop the camera when the modal closes.
   useEffect(() => {
@@ -154,7 +174,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
         stopCamera(stream);
       };
 
-      recorder.start(1000); // 1s slice
+      recorder.start();
       mediaRecorderRef.current = recorder;
       setIsRecording(true);
 
@@ -231,8 +251,17 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
       const res = await uploadVideoToCloudinary(videoData, { authorName });
       finalVideoUrl = res.url;
       cloudinaryPublicId = res.publicId;
-      setUploadProgress(85);
+      setUploadProgress(65);
       videoBlobKey = await saveVideoBlobLocally(tributeId, videoData);
+
+      let finalPhotoUrl: string | undefined;
+      let cloudinaryPhotoPublicId: string | undefined;
+      if (photoFile) {
+        setStatusMessage('Uploading your photo...');
+        const photoResult = await uploadPhotoToCloudinary(photoFile);
+        finalPhotoUrl = photoResult.url;
+        cloudinaryPhotoPublicId = photoResult.publicId;
+      }
 
       setUploadProgress(100);
       setStatusMessage('Finalizing celebration tribute...');
@@ -246,9 +275,10 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
         message: message.trim(),
         videoUrl: finalVideoUrl || undefined,
         cloudinaryPublicId,
+        cloudinaryPhotoPublicId,
         videoBlobKey,
         videoDuration: `${Math.floor(recordingTime / 60)}:${(recordingTime % 60).toString().padStart(2, '0')}`,
-        photoUrl: photoUrl.trim() || undefined,
+        photoUrl: finalPhotoUrl,
         createdAt: new Date().toISOString(),
         likes: 0,
         amens: 0,
@@ -285,7 +315,8 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
     setAuthorName('');
     setAuthorLocation('');
     setMessage('');
-    setPhotoUrl('');
+    setPhotoFile(null);
+    if (photoInputRef.current) photoInputRef.current.value = '';
     setRecordedBlob(null);
     if (recordedVideoUrl) URL.revokeObjectURL(recordedVideoUrl);
     setRecordedVideoUrl(null);
@@ -573,12 +604,59 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
                   Your Photo / Picture (Optional)
                 </label>
                 <input
-                  type="url"
-                  placeholder="Image URL or photo link"
-                  value={photoUrl}
-                  onChange={(e) => setPhotoUrl(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-amber-400"
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,image/avif"
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = '';
+                    if (!file) return;
+                    if (!/^image\/(jpeg|png|webp|gif|heic|heif|avif)$/i.test(file.type)) {
+                      setErrorMessage('Choose a JPG, PNG, WebP, GIF, HEIC, HEIF, or AVIF photo.');
+                      return;
+                    }
+                    if (file.size > 10 * 1024 * 1024) {
+                      setErrorMessage('Your photo must be 10 MB or smaller.');
+                      return;
+                    }
+                    setErrorMessage(null);
+                    setPhotoFile(file);
+                  }}
+                  className="hidden"
                 />
+                {photoFile && photoPreviewUrl ? (
+                  <div className="flex items-center gap-3 rounded-xl border border-slate-700 bg-slate-950 p-2.5">
+                    <img
+                      src={photoPreviewUrl}
+                      alt="Selected photo preview"
+                      className="h-12 w-12 rounded-lg object-cover"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-semibold text-white">{photoFile.name}</p>
+                      <p className="text-[11px] text-slate-400">
+                        {(photoFile.size / (1024 * 1024)).toFixed(1)} MB
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPhotoFile(null)}
+                      aria-label="Remove selected photo"
+                      className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-700 bg-slate-950 px-3.5 py-3 text-xs font-semibold text-slate-300 transition-colors hover:border-amber-400/60 hover:text-white"
+                  >
+                    <ImagePlus className="h-4 w-4 text-amber-400" />
+                    <span>Choose a photo (up to 10 MB)</span>
+                    <Upload className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
             </div>
 

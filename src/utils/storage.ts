@@ -98,6 +98,31 @@ export async function uploadVideoToCloudinary(
   return { url: data.url, publicId: data.publicId };
 }
 
+export async function uploadPhotoToCloudinary(
+  photo: File
+): Promise<{ url: string; publicId: string }> {
+  const formData = new FormData();
+  formData.append('file', photo);
+
+  const res = await fetch('/api/upload-photo', {
+    method: 'POST',
+    body: formData,
+  });
+  const data = await res.json();
+
+  if (!res.ok) {
+    console.error('Photo upload failed:', data.error || res.statusText);
+    throw new Error('Unable to upload your photo right now. Please try again.');
+  }
+
+  if (typeof data.url !== 'string' || typeof data.publicId !== 'string') {
+    console.error('Photo upload returned an invalid response:', data);
+    throw new Error('Unable to finish uploading your photo. Please try again.');
+  }
+
+  return { url: data.url, publicId: data.publicId };
+}
+
 // Load tributes from server and localStorage
 export async function fetchServerTributes(): Promise<Tribute[] | null> {
   try {

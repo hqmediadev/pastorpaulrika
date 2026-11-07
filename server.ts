@@ -63,6 +63,11 @@ function isVideoUploadFile(file: Express.Multer.File): boolean {
     || /\.(mp4|webm|mov|mkv|avi|ogg)$/i.test(file.originalname);
 }
 
+function isImageUploadFile(file: Express.Multer.File): boolean {
+  return /^image\/(jpeg|png|webp|gif|heic|heif|avif)$/i.test(file.mimetype)
+    || /\.(jpe?g|png|webp|gif|heic|heif|avif)$/i.test(file.originalname);
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 200 * 1024 * 1024 }, // 200MB max
@@ -71,6 +76,18 @@ const upload = multer({
       cb(null, true);
     } else {
       cb(new Error('Only video files can be uploaded'));
+    }
+  },
+});
+
+const photoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (isImageUploadFile(file)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Choose a JPG, PNG, WebP, GIF, HEIC, HEIF, or AVIF image'));
     }
   },
 });
@@ -123,6 +140,48 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   } catch (err: any) {
     console.error('Upload error:', err);
     return res.status(500).json({ error: err.message || 'Failed to upload video to Cloudinary' });
+  }
+});
+
+app.post('/api/upload-photo', photoUpload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No photo provided' });
+    }
+
+    if (!isImageUploadFile(req.file)) {
+      return res.status(415).json({ error: 'Only supported image files can be uploaded' });
+    }
+
+    const result = await new Promise<Awaited<ReturnType<typeof cloudinary.uploader.upload>>>((
+      resolve,
+      reject
+    ) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        { resource_type: 'image', folder: 'ppr-tributes/photos' },
+        (error, uploadResult) => {
+          if (error) {
+            reject(error);
+          } else if (!uploadResult) {
+            reject(new Error('Cloudinary returned an empty photo upload result'));
+          } else {
+            resolve(uploadResult);
+          }
+        }
+      );
+      uploadStream.end(req.file!.buffer);
+    });
+
+    return res.json({
+      success: true,
+      url: result.secure_url,
+      publicId: result.public_id,
+      size: req.file.size,
+      mimetype: req.file.mimetype,
+    });
+  } catch (err: any) {
+    console.error('Photo upload error:', err);
+    return res.status(500).json({ error: err.message || 'Failed to upload photo' });
   }
 });
 
@@ -192,6 +251,27 @@ app.delete('/api/tributes/:id', async (req, res) => {
     } catch (err) {
       console.error('Failed to delete video from Cloudinary:', err);
       return res.status(502).json({ error: 'Failed to delete video from Cloudinary' });
+    }
+  }
+
+  if (tributeToDelete.cloudinaryPhotoPublicId !== undefined) {
+    if (
+      typeof tributeToDelete.cloudinaryPhotoPublicId !== 'string'
+      || !tributeToDelete.cloudinaryPhotoPublicId.startsWith('ppr-tributes/photos/')
+    ) {
+      return res.status(400).json({ error: 'Invalid Cloudinary photo public ID' });
+    }
+
+    try {
+      const result = await cloudinary.uploader.destroy(tributeToDelete.cloudinaryPhotoPublicId, {
+        resource_type: 'image',
+      });
+      if (result.result !== 'ok' && result.result !== 'not found') {
+        return res.status(502).json({ error: 'Cloudinary did not delete the photo' });
+      }
+    } catch (err) {
+      console.error('Failed to delete photo from Cloudinary:', err);
+      return res.status(502).json({ error: 'Failed to delete photo from Cloudinary' });
     }
   }
 
