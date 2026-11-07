@@ -57,14 +57,26 @@ export async function uploadVideoToCloudinary(
   metadata: { authorName: string }
 ): Promise<{ url: string; publicId: string }> {
   const formData = new FormData();
-
-  if (fileOrBlob instanceof File) {
-    formData.append('file', fileOrBlob);
-  } else {
-    // Blob from webcam recording
-    const filename = `recording-${Date.now()}-${metadata.authorName.replace(/\s+/g, '_')}.webm`;
-    formData.append('file', fileOrBlob, filename);
-  }
+  const fileExtension = fileOrBlob instanceof File
+    ? fileOrBlob.name.split('.').pop()?.toLowerCase()
+    : fileOrBlob.type.includes('mp4') ? 'mp4' : 'webm';
+  const extension = fileExtension && /^(mp4|webm|mov|mkv|avi|ogg)$/.test(fileExtension)
+    ? fileExtension
+    : 'webm';
+  const filename = fileOrBlob instanceof File
+    ? fileOrBlob.name
+    : `tribute-${Date.now()}-${metadata.authorName.replace(/\s+/g, '_')}.${extension}`;
+  const inferredMimeType: Record<string, string> = {
+    mp4: 'video/mp4',
+    webm: 'video/webm',
+    mov: 'video/quicktime',
+    mkv: 'video/x-matroska',
+    avi: 'video/x-msvideo',
+    ogg: 'video/ogg',
+  };
+  const mimeType = fileOrBlob.type.split(';')[0] || inferredMimeType[extension];
+  const videoFile = new File([fileOrBlob], filename, { type: mimeType });
+  formData.append('file', videoFile);
 
   const res = await fetch('/api/upload', {
     method: 'POST',
@@ -73,11 +85,13 @@ export async function uploadVideoToCloudinary(
   const data = await res.json();
 
   if (!res.ok) {
-    throw new Error(data.error || 'Failed to upload video to Cloudinary.');
+    console.error('Video upload failed:', data.error || res.statusText);
+    throw new Error('Unable to upload your video right now. Please try again.');
   }
 
   if (typeof data.url !== 'string' || typeof data.publicId !== 'string') {
-    throw new Error('Cloudinary returned an invalid upload response.');
+    console.error('Video upload returned an invalid response:', data);
+    throw new Error('Unable to finish uploading your video. Please try again.');
   }
 
   return { url: data.url, publicId: data.publicId };

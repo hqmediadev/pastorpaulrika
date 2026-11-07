@@ -49,9 +49,21 @@ function saveTributesToFile(tributes: any[]) {
   }
 }
 
+function isVideoUploadFile(file: Express.Multer.File): boolean {
+  return file.mimetype.startsWith('video/')
+    || /\.(mp4|webm|mov|mkv|avi|ogg)$/i.test(file.originalname);
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 200 * 1024 * 1024 }, // 200MB max
+  fileFilter: (_req, file, cb) => {
+    if (isVideoUploadFile(file)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only video files can be uploaded'));
+    }
+  },
 });
 
 app.use(express.json({ limit: '10mb' }));
@@ -69,7 +81,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'No video file provided' });
     }
 
-    if (!req.file.mimetype.startsWith('video/')) {
+    if (!isVideoUploadFile(req.file)) {
       return res.status(415).json({ error: 'Only video files can be uploaded' });
     }
 

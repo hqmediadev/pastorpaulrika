@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Tribute, StorageConfig } from '../types';
 import { 
   X, 
@@ -63,7 +63,6 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
   const [success, setSuccess] = useState(false);
 
   // Refs
-  const liveVideoRef = useRef<HTMLVideoElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -78,7 +77,25 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
       stopCamera();
       resetForm();
     }
-  }, [isOpen]);
+  }, [isOpen, mediaStream]);
+
+  const attachLiveVideo = useCallback((video: HTMLVideoElement | null) => {
+    if (!video || !mediaStream) return;
+
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = mediaStream;
+
+    const playPreview = () => {
+      video.play().catch((err: unknown) => {
+        console.error('Live camera preview playback error:', err);
+        setRecordError('Unable to display the camera preview. Check browser camera permissions and try again.');
+      });
+    };
+
+    video.addEventListener('loadedmetadata', playPreview, { once: true });
+    playPreview();
+  }, [mediaStream]);
 
   const stopCamera = () => {
     if (mediaStream) {
@@ -90,7 +107,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
     }
   };
 
-  const startCamera = async () => {
+  const startCamera = async (): Promise<MediaStream | null> => {
     setRecordError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -98,17 +115,16 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
         audio: true,
       });
       setMediaStream(stream);
-      if (liveVideoRef.current) {
-        liveVideoRef.current.srcObject = stream;
-      }
+      return stream;
     } catch (err: unknown) {
       console.error('Camera access error:', err);
       setRecordError('Camera or microphone access denied. Please grant permission or choose "Upload Video File" tab.');
+      return null;
     }
   };
 
-  const startRecording = () => {
-    if (!mediaStream) return;
+  const startRecording = (stream = mediaStream) => {
+    if (!stream) return;
     chunksRef.current = [];
     setRecordedBlob(null);
     setRecordedVideoUrl(null);
@@ -118,11 +134,11 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
       const options = { mimeType: 'video/webm;codecs=vp8,opus' };
       let recorder: MediaRecorder;
       if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
-        recorder = new MediaRecorder(mediaStream, options);
+        recorder = new MediaRecorder(stream, options);
       } else if (MediaRecorder.isTypeSupported('video/mp4')) {
-        recorder = new MediaRecorder(mediaStream, { mimeType: 'video/mp4' });
+        recorder = new MediaRecorder(stream, { mimeType: 'video/mp4' });
       } else {
-        recorder = new MediaRecorder(mediaStream);
+        recorder = new MediaRecorder(stream);
       }
 
       recorder.ondataavailable = (e) => {
@@ -175,7 +191,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
       setRecordedVideoUrl(null);
     }
     setRecordingTime(0);
-    startCamera();
+    if (!mediaStream) startCamera();
   };
 
   // Video file upload handling
@@ -221,7 +237,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
 
       if (hasVideo) {
         const videoData = tab === 'video-record' ? recordedBlob! : uploadedFile!;
-        setStatusMessage('Uploading video to Cloudinary...');
+        setStatusMessage('Uploading your video...');
         setUploadProgress(40);
 
         const res = await uploadVideoToCloudinary(videoData, { authorName });
@@ -428,7 +444,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
                   ) : mediaStream ? (
                     // Live camera preview
                     <video
-                      ref={liveVideoRef}
+                      ref={attachLiveVideo}
                       autoPlay
                       muted
                       playsInline
@@ -474,11 +490,11 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          if (!mediaStream) {
-                            startCamera().then(startRecording);
-                          } else {
-                            startRecording();
-                          }
+                          const startWithCamera = async () => {
+                            const stream = mediaStream ?? await startCamera();
+                            if (stream) startRecording(stream);
+                          };
+                          void startWithCamera();
                         }}
                         className="px-6 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center gap-2 shadow-lg"
                       >
@@ -623,7 +639,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
                 </label>
                 <input
                   type="url"
-                  placeholder="Image URL or Cloudinary link"
+                  placeholder="Image URL or photo link"
                   value={photoUrl}
                   onChange={(e) => setPhotoUrl(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-amber-400"
