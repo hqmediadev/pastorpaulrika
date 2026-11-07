@@ -66,6 +66,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const liveVideoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     setTab(defaultTab === 'text' ? 'text' : 'video-record');
@@ -91,7 +92,12 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
   }, [isOpen, mediaStream]);
 
   const attachLiveVideo = useCallback((video: HTMLVideoElement | null) => {
-    if (!video || !mediaStream) return;
+    liveVideoRef.current = video;
+    if (!video) return;
+    if (!mediaStream) {
+      video.srcObject = null;
+      return;
+    }
 
     video.muted = true;
     video.playsInline = true;
@@ -112,6 +118,9 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
     if (stream) {
       stream.getTracks().forEach((track) => track.stop());
     }
+    if (liveVideoRef.current) {
+      liveVideoRef.current.srcObject = null;
+    }
     setMediaStream(null);
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
@@ -121,10 +130,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
   const startCamera = async (): Promise<MediaStream | null> => {
     setRecordError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: true,
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       setMediaStream(stream);
       return stream;
     } catch (err: unknown) {
@@ -143,12 +149,11 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
     setRecordingTime(0);
 
     try {
-      const options = { mimeType: 'video/webm;codecs=vp8,opus' };
       let recorder: MediaRecorder;
-      if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
-        recorder = new MediaRecorder(stream, options);
-      } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+      if (MediaRecorder.isTypeSupported('video/mp4')) {
         recorder = new MediaRecorder(stream, { mimeType: 'video/mp4' });
+      } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
+        recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8,opus' });
       } else {
         recorder = new MediaRecorder(stream);
       }
@@ -214,6 +219,17 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
     clearRecordedVideo();
     const stream = await startCamera();
     if (stream) startRecording(stream);
+  };
+
+  const handleRecordedMetadata = (event: React.SyntheticEvent<HTMLVideoElement>) => {
+    const video = event.currentTarget;
+    if (video.duration === Infinity || Number.isNaN(video.duration)) {
+      video.ontimeupdate = () => {
+        video.ontimeupdate = null;
+        video.currentTime = 0;
+      };
+      video.currentTime = 1e101;
+    }
   };
 
   // Handle final tribute submission
@@ -451,6 +467,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
                       controls
                       playsInline
                       preload="metadata"
+                      onLoadedMetadata={handleRecordedMetadata}
                       onError={(event) => {
                         console.error('Recorded video preview playback error:', event.currentTarget.error);
                         setRecordError('This browser could not play the recorded video. Please record again or try another browser.');
