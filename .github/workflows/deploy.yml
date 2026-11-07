@@ -21,7 +21,7 @@ jobs:
 
       - name: Install Dependencies & Build Frontend
         run: |
-          npm ci
+          npm ci --legacy-peer-deps
           npm run build
 
       - name: Deploy Files to VPS via SCP
@@ -44,6 +44,6 @@ jobs:
           script: |
             export PATH=$PATH:/usr/bin:/usr/local/bin:/home/ubuntu/.npm-global/bin
             cd /var/www/://horemow.com
-            npm ci
+            npm ci --legacy-peer-deps
             pm2 startOrRestart ecosystem.config.js --update-env
             pm2 save
