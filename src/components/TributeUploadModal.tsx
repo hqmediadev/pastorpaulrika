@@ -140,7 +140,9 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
       };
 
       recorder.onstop = () => {
-        const mimeType = chunksRef.current[0]?.type || 'video/webm';
+        const mimeType = recorder.mimeType
+          || chunksRef.current.find((chunk) => chunk.type)?.type
+          || 'video/webm';
         const blob = new Blob(chunksRef.current, { type: mimeType });
         if (blob.size > 0) {
           setRecordedBlob(blob);
@@ -417,6 +419,11 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
                       src={recordedVideoUrl}
                       controls
                       playsInline
+                      preload="metadata"
+                      onError={(event) => {
+                        console.error('Recorded video preview playback error:', event.currentTarget.error);
+                        setRecordError('This browser could not play the recorded video. Please record again or try another browser.');
+                      }}
                       className="w-full h-full object-contain"
                     />
                   ) : mediaStream ? (
