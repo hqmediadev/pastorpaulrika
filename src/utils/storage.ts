@@ -51,11 +51,11 @@ export async function deleteVideoBlob(id: string): Promise<void> {
   }
 }
 
-// Upload file directly to VPS backend storage (/api/upload)
-export async function uploadVideoToVps(
+// Upload the video through the backend to Cloudinary.
+export async function uploadVideoToCloudinary(
   fileOrBlob: File | Blob,
   metadata: { authorName: string }
-): Promise<{ url: string }> {
+): Promise<{ url: string; publicId: string }> {
   const formData = new FormData();
 
   if (fileOrBlob instanceof File) {
@@ -66,25 +66,21 @@ export async function uploadVideoToVps(
     formData.append('file', fileOrBlob, filename);
   }
 
-  try {
-    const res = await fetch('/api/upload', {
-      method: 'POST',
-      body: formData,
-    });
+  const res = await fetch('/api/upload', {
+    method: 'POST',
+    body: formData,
+  });
+  const data = await res.json();
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.url) {
-        return { url: data.url };
-      }
-    }
-  } catch (networkErr) {
-    console.warn('Backend VPS upload network error, using local resilient cache:', networkErr);
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to upload video to Cloudinary.');
   }
 
-  // Fallback to local Blob URL so the recording is still immediately available
-  const localUrl = URL.createObjectURL(fileOrBlob);
-  return { url: localUrl };
+  if (typeof data.url !== 'string' || typeof data.publicId !== 'string') {
+    throw new Error('Cloudinary returned an invalid upload response.');
+  }
+
+  return { url: data.url, publicId: data.publicId };
 }
 
 // Load tributes from server and localStorage

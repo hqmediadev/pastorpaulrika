@@ -22,3 +22,5 @@ Prerequisites: Node.js
 ## Notes
 
 The app uses Vite for the frontend and a small Express server for local serving support.
+
+Video tributes are uploaded by the Express API to Cloudinary. Set `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, and `CLOUDINARY_API_SECRET` in the server environment (or local `.env` file) before accepting video uploads. Keep the API secret private. Uploads are stored in the `ppr-tributes` folder; deleting an admin-removed tribute also deletes its Cloudinary video.

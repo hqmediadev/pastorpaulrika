@@ -6,6 +6,7 @@ export interface Tribute {
   relationship: string;   // e.g. "Spiritual Son", "Church Member", "Revival Follower", "Evangelist"
   message: string;
   videoUrl?: string;
+  cloudinaryPublicId?: string;
   videoBlobKey?: string;  // key in IndexedDB for offline / local video blobs
   videoDuration?: string;
   photoUrl?: string;      // author photo or memory with Pastor Paul Rika

@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { playCelebrationChime } from '../utils/audio';
-import { saveVideoBlobLocally, uploadVideoToVps } from '../utils/storage';
+import { saveVideoBlobLocally, uploadVideoToCloudinary } from '../utils/storage';
 
 interface TributeUploadModalProps {
   isOpen: boolean;
@@ -216,23 +216,19 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
     try {
       const tributeId = `trib-${Date.now()}`;
       let finalVideoUrl = '';
+      let cloudinaryPublicId: string | undefined;
       let videoBlobKey: string | undefined = undefined;
 
       if (hasVideo) {
         const videoData = tab === 'video-record' ? recordedBlob! : uploadedFile!;
-        setStatusMessage('Uploading video directly to VPS storage...');
+        setStatusMessage('Uploading video to Cloudinary...');
         setUploadProgress(40);
 
-        try {
-          const res = await uploadVideoToVps(videoData, { authorName });
-          finalVideoUrl = res.url;
-          setUploadProgress(85);
-          videoBlobKey = await saveVideoBlobLocally(tributeId, videoData);
-        } catch (uploadErr) {
-          console.warn('VPS upload fallback to local storage:', uploadErr);
-          videoBlobKey = await saveVideoBlobLocally(tributeId, videoData);
-          finalVideoUrl = URL.createObjectURL(videoData);
-        }
+        const res = await uploadVideoToCloudinary(videoData, { authorName });
+        finalVideoUrl = res.url;
+        cloudinaryPublicId = res.publicId;
+        setUploadProgress(85);
+        videoBlobKey = await saveVideoBlobLocally(tributeId, videoData);
       }
 
       setUploadProgress(100);
@@ -246,6 +242,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
         relationship: relationship.trim(),
         message: message.trim(),
         videoUrl: finalVideoUrl || undefined,
+        cloudinaryPublicId,
         videoBlobKey,
         videoDuration: hasVideo ? `${Math.floor(recordingTime / 60)}:${(recordingTime % 60).toString().padStart(2, '0')}` : undefined,
         photoUrl: photoUrl.trim() || undefined,
@@ -254,7 +251,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
         amens: 1,
         isApproved: true,
         isFeatured: hasVideo,
-        storageProvider: 'vps',
+        storageProvider: hasVideo ? 'cloudinary' : undefined,
       };
 
       onSubmitTribute(newTribute);

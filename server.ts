@@ -1,8 +1,10 @@
+import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
+import { v2 as cloudinary } from 'cloudinary';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,6 +12,12 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin1234';
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 // Ensure upload and data directories exist
 const UPLOADS_DIR = path.join(__dirname, 'uploads', 'videos');
@@ -41,21 +49,8 @@ function saveTributesToFile(tributes: any[]) {
   }
 }
 
-// Multer storage config on VPS disk
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, UPLOADS_DIR);
-  },
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname) || '.mp4';
-    const cleanName = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9_-]/g, '_');
-    const uniqueName = `pastor-paul-rika-tribute-${Date.now()}-${cleanName}${ext}`;
-    cb(null, uniqueName);
-  },
-});
-
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 200 * 1024 * 1024 }, // 200MB max
 });
 
@@ -67,24 +62,46 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // --- API ROUTES ---
 
-// 1. Direct VPS Video Upload
-app.post('/api/upload', upload.single('file'), (req, res) => {
+// 1. Upload videos to Cloudinary
+app.post('/api/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No video file provided' });
     }
 
-    const videoUrl = `/uploads/videos/${req.file.filename}`;
+    if (!req.file.mimetype.startsWith('video/')) {
+      return res.status(415).json({ error: 'Only video files can be uploaded' });
+    }
+
+    const result = await new Promise<Awaited<ReturnType<typeof cloudinary.uploader.upload>>>((
+      resolve,
+      reject
+    ) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        { resource_type: 'video', folder: 'ppr-tributes' },
+        (error, uploadResult) => {
+          if (error) {
+            reject(error);
+          } else if (!uploadResult) {
+            reject(new Error('Cloudinary returned an empty upload result'));
+          } else {
+            resolve(uploadResult);
+          }
+        }
+      );
+      uploadStream.end(req.file!.buffer);
+    });
+
     return res.json({
       success: true,
-      url: videoUrl,
-      filename: req.file.filename,
+      url: result.secure_url,
+      publicId: result.public_id,
       size: req.file.size,
       mimetype: req.file.mimetype,
     });
   } catch (err: any) {
     console.error('Upload error:', err);
-    return res.status(500).json({ error: err.message || 'Failed to save video on server' });
+    return res.status(500).json({ error: err.message || 'Failed to upload video to Cloudinary' });
   }
 });
 
@@ -120,7 +137,7 @@ app.post('/api/admin/verify', (req, res) => {
 });
 
 // 4. Admin-Only Delete
-app.delete('/api/tributes/:id', (req, res) => {
+app.delete('/api/tributes/:id', async (req, res) => {
   const authHeader = req.headers.authorization;
   const adminSecret = req.headers['x-admin-password'];
   
@@ -136,7 +153,28 @@ app.delete('/api/tributes/:id', (req, res) => {
     return res.status(404).json({ error: 'Tribute not found' });
   }
 
-  // If tribute has a server file, optionally remove from disk
+  if (tributeToDelete.cloudinaryPublicId !== undefined) {
+    if (
+      typeof tributeToDelete.cloudinaryPublicId !== 'string'
+      || !tributeToDelete.cloudinaryPublicId.startsWith('ppr-tributes/')
+    ) {
+      return res.status(400).json({ error: 'Invalid Cloudinary video public ID' });
+    }
+
+    try {
+      const result = await cloudinary.uploader.destroy(tributeToDelete.cloudinaryPublicId, {
+        resource_type: 'video',
+      });
+      if (result.result !== 'ok' && result.result !== 'not found') {
+        return res.status(502).json({ error: 'Cloudinary did not delete the video' });
+      }
+    } catch (err) {
+      console.error('Failed to delete video from Cloudinary:', err);
+      return res.status(502).json({ error: 'Failed to delete video from Cloudinary' });
+    }
+  }
+
+  // Remove videos uploaded by older versions from VPS disk.
   if (tributeToDelete.videoUrl && tributeToDelete.videoUrl.startsWith('/uploads/videos/')) {
     const filename = path.basename(tributeToDelete.videoUrl);
     const filePath = path.join(UPLOADS_DIR, filename);
