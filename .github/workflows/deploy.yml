@@ -10,32 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Source Code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Install Dependencies & Build Frontend
-        run: |
-          npm ci --legacy-peer-deps
-          npm run build
-
-      - name: Deploy Files to VPS via SCP
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          source: "dist,server.ts,package.json,package-lock.json"
-          target: "/var/www/horemow.com/ppr"
-          overwrite: true
-          tar_tmp_path: "/tmp"
-
-      - name: Install Server Dependencies & Restart PM2
+      - name: Deploy and Restart PPR on VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -44,6 +19,9 @@ jobs:
           script: |
             export PATH=$PATH:/usr/bin:/usr/local/bin:/home/ubuntu/.npm-global/bin
             cd /var/www/horemow.com/ppr
+            git fetch origin main
+            git reset --hard origin/main
             npm ci --legacy-peer-deps
+            npm run build
             pm2 startOrRestart ecosystem.config.js --update-env
             pm2 save
