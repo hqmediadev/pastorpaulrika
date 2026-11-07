@@ -26,13 +26,22 @@ fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const TRIBUTES_FILE = path.join(DATA_DIR, 'tributes.json');
+const SAMPLE_TRIBUTE_IDS = new Set(['trib-1', 'trib-2', 'trib-3', 'trib-4', 'trib-5', 'trib-6']);
 
 // Helper to read tributes
 function getTributesFromFile(): any[] {
   try {
     if (fs.existsSync(TRIBUTES_FILE)) {
       const content = fs.readFileSync(TRIBUTES_FILE, 'utf-8');
-      return JSON.parse(content);
+      const tributes = JSON.parse(content);
+      if (!Array.isArray(tributes)) {
+        throw new Error('Tributes data must be an array');
+      }
+      const userTributes = tributes.filter((tribute: any) => !SAMPLE_TRIBUTE_IDS.has(tribute?.id));
+      if (userTributes.length !== tributes.length) {
+        saveTributesToFile(userTributes);
+      }
+      return userTributes;
     }
   } catch (err) {
     console.error('Error reading tributes file:', err);

@@ -5,8 +5,9 @@ const DB_VERSION = 1;
 const STORE_VIDEOS = 'tribute_videos';
 
 const TRIBUTES_STORAGE_KEY = 'pastor_paul_rika_tributes_list_v2';
-const BLESSINGS_COUNT_KEY = 'pastor_paul_rika_blessings_counter_v2';
+const BLESSINGS_COUNT_KEY = 'pastor_paul_rika_blessings_counter_v3';
 const ADMIN_AUTH_KEY = 'pastor_paul_rika_admin_authenticated';
+const SAMPLE_TRIBUTE_IDS = new Set(['trib-1', 'trib-2', 'trib-3', 'trib-4', 'trib-5', 'trib-6']);
 
 // Initialize IndexedDB for resilient offline video caching
 function openDB(): Promise<IDBDatabase> {
@@ -103,8 +104,8 @@ export async function fetchServerTributes(): Promise<Tribute[] | null> {
     const res = await fetch('/api/tributes');
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data.tributes) && data.tributes.length > 0) {
-        return data.tributes;
+      if (Array.isArray(data.tributes)) {
+        return data.tributes.filter((tribute: Tribute) => !SAMPLE_TRIBUTE_IDS.has(tribute.id));
       }
     }
   } catch (err) {
@@ -174,7 +175,14 @@ export function getAdminDownloadUrl(videoUrl: string, adminPassword: string): st
 export function loadStoredTributes(): Tribute[] | null {
   try {
     const saved = localStorage.getItem(TRIBUTES_STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const tributes: Tribute[] = JSON.parse(saved);
+      const userTributes = tributes.filter((tribute) => !SAMPLE_TRIBUTE_IDS.has(tribute.id));
+      if (userTributes.length !== tributes.length) {
+        saveStoredTributes(userTributes);
+      }
+      return userTributes;
+    }
   } catch (e) {
     console.error(e);
   }
@@ -196,7 +204,7 @@ export function loadStoredBlessings(): number {
   } catch (e) {
     console.error(e);
   }
-  return 14820;
+  return 0;
 }
 
 export function saveStoredBlessings(count: number): void {

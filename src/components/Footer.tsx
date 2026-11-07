@@ -21,7 +21,7 @@ export const Footer: React.FC<FooterProps> = ({ onOpenUploadModal, onOpenAdmin, 
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-center pb-12 border-b border-slate-800">
           
           <div className="md:col-span-6 space-y-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xl font-serif font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-amber-400 to-yellow-500">
                 PASTOR PAUL RIKA
               </span>
@@ -43,7 +43,7 @@ export const Footer: React.FC<FooterProps> = ({ onOpenUploadModal, onOpenAdmin, 
               className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg hover:from-amber-300 hover:to-yellow-400"
             >
               <Video className="w-4 h-4 fill-slate-950" />
-              <span>Upload Video Tribute</span>
+              <span>Record Video Tribute</span>
             </button>
 
             <button

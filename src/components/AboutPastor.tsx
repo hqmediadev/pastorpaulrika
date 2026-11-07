@@ -129,7 +129,7 @@ export const AboutPastor: React.FC<AboutPastorProps> = ({ onOpenUploadModal }) =
                 className="px-6 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 whitespace-nowrap shadow-md transition-all hover:scale-[1.02]"
               >
                 <Video className="w-4 h-4 fill-slate-950" />
-                <span>Upload Video Tribute</span>
+                <span>Record Video Tribute</span>
                 <Crown className="w-3.5 h-3.5 fill-slate-950 text-slate-950" />
               </button>
               <button

@@ -215,7 +215,7 @@ export const FlippingCardShowcase: React.FC<FlippingCardShowcaseProps> = ({ onOp
           className="text-xs text-amber-300 hover:text-amber-200 font-semibold inline-flex items-center gap-1 hover:underline"
         >
           <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-          <span>Tap to upload your video tribute for Pastor Paul Rika →</span>
+          <span>Tap to record your video tribute for Pastor Paul Rika →</span>
         </button>
       </div>
 

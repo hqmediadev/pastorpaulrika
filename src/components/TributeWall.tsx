@@ -21,7 +21,7 @@ import { playCelebrationChime } from '../utils/audio';
 interface TributeWallProps {
   tributes: Tribute[];
   onSelectVideo: (tribute: Tribute) => void;
-  onOpenUploadModal: (tab: 'video-record' | 'video-upload' | 'text') => void;
+  onOpenUploadModal: (tab: 'video-record' | 'text') => void;
   onLikeTribute: (id: string) => void;
   onAmenTribute: (id: string) => void;
 }
@@ -89,7 +89,7 @@ export const TributeWall: React.FC<TributeWallProps> = ({
   };
 
   return (
-    <section id="tributes" className="relative py-20 bg-slate-950 min-h-screen">
+    <section id="tributes" className="relative py-20 bg-slate-950 min-h-screen overflow-hidden">
       {/* Background celestial glow */}
       <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-amber-500/5 rounded-full blur-[160px] pointer-events-none" />
 

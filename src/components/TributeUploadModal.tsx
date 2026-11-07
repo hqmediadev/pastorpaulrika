@@ -1,20 +1,15 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Tribute, StorageConfig } from '../types';
+import { Tribute } from '../types';
 import { 
   X, 
-  Video, 
-  Upload, 
   Heart, 
   Camera, 
   Square, 
-  RotateCcw, 
+  RotateCcw,
   CheckCircle, 
   AlertCircle, 
   Loader2, 
   Sparkles,
-  Play,
-  FileVideo,
-  Info,
   Crown
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -24,7 +19,7 @@ import { saveVideoBlobLocally, uploadVideoToCloudinary } from '../utils/storage'
 interface TributeUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  defaultTab?: 'video-record' | 'video-upload' | 'text';
+  defaultTab?: 'video-record' | 'text';
   onSubmitTribute: (tribute: Tribute) => void;
 }
 
@@ -34,7 +29,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
   defaultTab = 'video-record',
   onSubmitTribute,
 }) => {
-  const [tab, setTab] = useState<'video-record' | 'video-upload' | 'text'>(defaultTab);
+  const [tab, setTab] = useState<'video-record' | 'text'>(defaultTab === 'text' ? 'text' : 'video-record');
 
   // Author information
   const [authorName, setAuthorName] = useState('');
@@ -51,10 +46,6 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
   const [recordError, setRecordError] = useState<string | null>(null);
 
-  // Upload file state
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [uploadedPreviewUrl, setUploadedPreviewUrl] = useState<string | null>(null);
-
   // Submission status
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -68,10 +59,10 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
   const chunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
-    setTab(defaultTab);
+    setTab(defaultTab === 'text' ? 'text' : 'video-record');
   }, [defaultTab]);
 
-  // Clean up streams on close or tab switch
+  // Stop the camera when the modal closes.
   useEffect(() => {
     if (!isOpen) {
       stopCamera();
@@ -97,11 +88,11 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
     playPreview();
   }, [mediaStream]);
 
-  const stopCamera = () => {
-    if (mediaStream) {
-      mediaStream.getTracks().forEach((track) => track.stop());
-      setMediaStream(null);
+  const stopCamera = (stream = mediaStream) => {
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
     }
+    setMediaStream(null);
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
     }
@@ -118,7 +109,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
       return stream;
     } catch (err: unknown) {
       console.error('Camera access error:', err);
-      setRecordError('Camera or microphone access denied. Please grant permission or choose "Upload Video File" tab.');
+      setRecordError('Camera or microphone access was denied. Allow access in your browser settings, then try again.');
       return null;
     }
   };
@@ -127,6 +118,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
     if (!stream) return;
     chunksRef.current = [];
     setRecordedBlob(null);
+    if (recordedVideoUrl) URL.revokeObjectURL(recordedVideoUrl);
     setRecordedVideoUrl(null);
     setRecordingTime(0);
 
@@ -150,69 +142,66 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
       recorder.onstop = () => {
         const mimeType = chunksRef.current[0]?.type || 'video/webm';
         const blob = new Blob(chunksRef.current, { type: mimeType });
-        setRecordedBlob(blob);
-        const url = URL.createObjectURL(blob);
-        setRecordedVideoUrl(url);
+        if (blob.size > 0) {
+          setRecordedBlob(blob);
+          setRecordedVideoUrl(URL.createObjectURL(blob));
+        } else {
+          setRecordError('No video was captured. Please record again.');
+        }
+        setIsRecording(false);
+        stopCamera(stream);
       };
 
       recorder.start(1000); // 1s slice
       mediaRecorderRef.current = recorder;
       setIsRecording(true);
 
+      let elapsedSeconds = 0;
       timerIntervalRef.current = setInterval(() => {
-        setRecordingTime((prev) => {
-          if (prev >= 180) { // 3 minute maximum
-            stopRecording();
-            return 180;
-          }
-          return prev + 1;
-        });
+        elapsedSeconds += 1;
+        setRecordingTime(Math.min(elapsedSeconds, 180));
+        if (elapsedSeconds >= 180) stopRecording();
       }, 1000);
     } catch (err) {
       console.error('Failed to start recording:', err);
-      setRecordError('Could not start video recorder on this browser. Try uploading a video file.');
+      stopCamera(stream);
+      setRecordError('Could not start video recording in this browser. Please try another browser or device.');
     }
   };
 
   const stopRecording = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
+    } else {
+      setIsRecording(false);
+      stopCamera();
     }
-    setIsRecording(false);
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
     }
   };
 
-  const reRecord = () => {
+  const clearRecordedVideo = () => {
     setRecordedBlob(null);
-    if (recordedVideoUrl) {
-      URL.revokeObjectURL(recordedVideoUrl);
-      setRecordedVideoUrl(null);
-    }
+    if (recordedVideoUrl) URL.revokeObjectURL(recordedVideoUrl);
+    setRecordedVideoUrl(null);
     setRecordingTime(0);
-    if (!mediaStream) startCamera();
   };
 
-  // Video file upload handling
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 150 * 1024 * 1024) {
-      setErrorMessage('Video file is larger than 150MB. Please select a smaller clip.');
-      return;
-    }
-
-    setUploadedFile(file);
-    const url = URL.createObjectURL(file);
-    setUploadedPreviewUrl(url);
-    setErrorMessage(null);
+  const recordAgain = async () => {
+    clearRecordedVideo();
+    const stream = await startCamera();
+    if (stream) startRecording(stream);
   };
 
   // Handle final tribute submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!recordedBlob) {
+      setErrorMessage('Record and stop your video before submitting your tribute.');
+      setTab('video-record');
+      return;
+    }
     if (!authorName.trim()) {
       setErrorMessage('Please enter your name.');
       return;
@@ -221,8 +210,6 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
       setErrorMessage('Please write a tribute or describe how Pastor Paul Rika impacted your life.');
       return;
     }
-
-    const hasVideo = tab === 'video-record' ? !!recordedBlob : tab === 'video-upload' ? !!uploadedFile : false;
 
     setIsSubmitting(true);
     setErrorMessage(null);
@@ -235,24 +222,22 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
       let cloudinaryPublicId: string | undefined;
       let videoBlobKey: string | undefined = undefined;
 
-      if (hasVideo) {
-        const videoData = tab === 'video-record' ? recordedBlob! : uploadedFile!;
-        setStatusMessage('Uploading your video...');
-        setUploadProgress(40);
+      const videoData = recordedBlob;
+      setStatusMessage('Uploading your video...');
+      setUploadProgress(40);
 
-        const res = await uploadVideoToCloudinary(videoData, { authorName });
-        finalVideoUrl = res.url;
-        cloudinaryPublicId = res.publicId;
-        setUploadProgress(85);
-        videoBlobKey = await saveVideoBlobLocally(tributeId, videoData);
-      }
+      const res = await uploadVideoToCloudinary(videoData, { authorName });
+      finalVideoUrl = res.url;
+      cloudinaryPublicId = res.publicId;
+      setUploadProgress(85);
+      videoBlobKey = await saveVideoBlobLocally(tributeId, videoData);
 
       setUploadProgress(100);
       setStatusMessage('Finalizing celebration tribute...');
 
       const newTribute: Tribute = {
         id: tributeId,
-        type: hasVideo && message ? 'both' : hasVideo ? 'video' : 'text',
+        type: message ? 'both' : 'video',
         authorName: authorName.trim(),
         authorLocation: authorLocation.trim() || 'Worldwide',
         relationship: relationship.trim(),
@@ -260,14 +245,14 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
         videoUrl: finalVideoUrl || undefined,
         cloudinaryPublicId,
         videoBlobKey,
-        videoDuration: hasVideo ? `${Math.floor(recordingTime / 60)}:${(recordingTime % 60).toString().padStart(2, '0')}` : undefined,
+        videoDuration: `${Math.floor(recordingTime / 60)}:${(recordingTime % 60).toString().padStart(2, '0')}`,
         photoUrl: photoUrl.trim() || undefined,
         createdAt: new Date().toISOString(),
-        likes: 1,
-        amens: 1,
+        likes: 0,
+        amens: 0,
         isApproved: true,
-        isFeatured: hasVideo,
-        storageProvider: hasVideo ? 'cloudinary' : undefined,
+        isFeatured: false,
+        storageProvider: 'cloudinary',
       };
 
       onSubmitTribute(newTribute);
@@ -300,9 +285,8 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
     setMessage('');
     setPhotoUrl('');
     setRecordedBlob(null);
+    if (recordedVideoUrl) URL.revokeObjectURL(recordedVideoUrl);
     setRecordedVideoUrl(null);
-    setUploadedFile(null);
-    setUploadedPreviewUrl(null);
     setIsRecording(false);
     setRecordingTime(0);
     setIsSubmitting(false);
@@ -319,13 +303,17 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-6">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md flex items-start sm:items-center justify-center p-0 sm:p-4">
       <div 
-        className="relative w-full max-w-2xl bg-slate-900 border border-amber-500/40 rounded-3xl shadow-2xl overflow-hidden my-8"
+        className={`relative flex flex-col w-full bg-slate-900 border border-amber-500/40 shadow-2xl overflow-hidden ${
+          isRecording
+            ? 'fixed inset-0 z-[60] h-[100dvh] w-screen max-w-none rounded-none border-0 my-0'
+            : 'my-0 h-[100dvh] max-h-[100dvh] max-w-2xl rounded-none sm:my-4 sm:h-auto sm:max-h-[92dvh] sm:rounded-3xl'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top Header */}
-        <div className="bg-gradient-to-r from-amber-600 via-amber-500 to-yellow-600 p-0.5">
+        <div className={`shrink-0 bg-gradient-to-r from-amber-600 via-amber-500 to-yellow-600 p-0.5 ${isRecording ? 'hidden' : ''}`}>
           <div className="bg-slate-950 px-6 py-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
@@ -335,7 +323,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
                 <h3 className="text-xl font-serif font-black text-white">
                   Send Your Birthday Tribute
                 </h3>
-                <p className="text-xs text-amber-200/80">
+                <p className="hidden text-xs text-amber-200/80 sm:block">
                   Honoring Pastor Paul Rika's Decades of Holiness & Revival
                 </p>
               </div>
@@ -367,20 +355,21 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
             </p>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="p-6 space-y-5">
+          <form onSubmit={handleSubmit} className={`relative flex-1 min-h-0 overflow-y-auto space-y-5 ${isRecording ? 'overflow-hidden p-0' : 'p-4 sm:p-6'}`}>
             {/* Format selection tabs */}
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-slate-300">Choose Tribute Format:</span>
+              <div className="flex flex-col items-start gap-1 mb-2 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-xs font-semibold text-slate-300">A completed video recording is required to publish.</span>
                 <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
                   <Crown className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                  <span>Video Priority</span>
+                  <span>Video Tribute</span>
                 </span>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
+              <div className="grid grid-cols-2 gap-1 sm:gap-2 bg-slate-950 p-1.5 rounded-2xl border border-slate-800">
                 <button
                   type="button"
+                  disabled={isRecording}
                   onClick={() => {
                     setTab('video-record');
                     if (!mediaStream && !recordedBlob) startCamera();
@@ -397,22 +386,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => {
-                    stopCamera();
-                    setTab('video-upload');
-                  }}
-                  className={`py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
-                    tab === 'video-upload'
-                      ? 'bg-amber-500 text-slate-950 shadow-md'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <Upload className="w-4 h-4" />
-                  <span>Upload Video</span>
-                </button>
-
-                <button
-                  type="button"
+                  disabled={isRecording}
                   onClick={() => {
                     stopCamera();
                     setTab('text');
@@ -432,14 +406,18 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
             {/* TAB 1: RECORD VIDEO */}
             {tab === 'video-record' && (
               <div className="space-y-3">
-                <div className="relative rounded-2xl overflow-hidden aspect-video bg-black border border-slate-800 flex items-center justify-center">
+                <div className={`${
+                  isRecording
+                    ? 'absolute inset-0 z-40 flex items-center justify-center bg-black'
+                    : 'relative flex aspect-video items-center justify-center overflow-hidden rounded-2xl border border-slate-800 bg-black'
+                }`}>
                   {recordedVideoUrl ? (
                     // Review recorded video
                     <video
                       src={recordedVideoUrl}
                       controls
-                      autoPlay
-                      className="w-full h-full object-cover"
+                      playsInline
+                      className="w-full h-full object-contain"
                     />
                   ) : mediaStream ? (
                     // Live camera preview
@@ -448,18 +426,18 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
                       autoPlay
                       muted
                       playsInline
-                      className="w-full h-full object-cover"
+                      className={`w-full h-full ${isRecording ? 'object-contain' : 'object-cover'}`}
                     />
                   ) : (
                     // Camera closed
                     <div className="text-center p-6 space-y-3">
                       <Camera className="w-10 h-10 text-amber-400/70 mx-auto" />
                       <p className="text-xs text-slate-400">
-                        Camera preview ready. Click below to activate your webcam.
+                        Record a short video tribute. You can review it before submitting.
                       </p>
                       <button
                         type="button"
-                        onClick={startCamera}
+                        onClick={() => { void startCamera(); }}
                         className="px-4 py-2 rounded-xl bg-amber-500 text-slate-950 text-xs font-bold hover:bg-amber-400"
                       >
                         Enable Camera & Mic
@@ -469,10 +447,21 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
 
                   {/* Recording indicator & timer */}
                   {isRecording && (
-                    <div className="absolute top-3 left-3 flex items-center gap-2 bg-red-600/90 text-white text-xs px-3 py-1 rounded-full font-mono font-bold animate-pulse">
-                      <span className="w-2 h-2 rounded-full bg-white" />
-                      <span>REC {formatTimer(recordingTime)} / 3:00</span>
-                    </div>
+                    <>
+                      <div className="absolute top-[max(1rem,env(safe-area-inset-top))] left-4 flex items-center gap-2 rounded-full bg-red-600/90 px-3 py-1.5 font-mono text-xs font-bold text-white animate-pulse">
+                        <span className="h-2 w-2 rounded-full bg-white" />
+                        <span>REC {formatTimer(recordingTime)} / 3:00</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={stopRecording}
+                        aria-label="Stop recording"
+                        title="Stop recording"
+                        className="absolute bottom-[max(2rem,env(safe-area-inset-bottom))] left-1/2 flex h-16 w-16 -translate-x-1/2 items-center justify-center rounded-full border-4 border-white/80 bg-red-600 text-white shadow-xl"
+                      >
+                        <Square className="h-6 w-6 fill-current" />
+                      </button>
+                    </>
                   )}
                 </div>
 
@@ -484,9 +473,9 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
                 )}
 
                 {/* Camera controls */}
-                <div className="flex items-center justify-center gap-3">
-                  {!recordedVideoUrl ? (
-                    !isRecording ? (
+                {!isRecording && (
+                  <div className="flex items-center justify-center gap-3">
+                    {!recordedVideoUrl ? (
                       <button
                         type="button"
                         onClick={() => {
@@ -502,83 +491,22 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
                         <span>Start Recording</span>
                       </button>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={stopRecording}
-                        className="px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs flex items-center gap-2 border border-slate-700"
-                      >
-                        <Square className="w-3 h-3 fill-current" />
-                        <span>Stop & Review</span>
-                      </button>
-                    )
-                  ) : (
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={reRecord}
-                        className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-2"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        <span>Re-record Video</span>
-                      </button>
-                      <span className="text-xs text-emerald-400 font-semibold flex items-center gap-1">
-                        <CheckCircle className="w-3.5 h-3.5" /> Video Ready ({formatTimer(recordingTime)})
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* TAB 2: UPLOAD VIDEO FILE */}
-            {tab === 'video-upload' && (
-              <div className="space-y-3">
-                <div className="border-2 border-dashed border-slate-700 hover:border-amber-400/60 rounded-2xl p-6 text-center bg-slate-950/60 transition-colors">
-                  {uploadedPreviewUrl ? (
-                    <div className="space-y-3">
-                      <video
-                        src={uploadedPreviewUrl}
-                        controls
-                        className="max-h-48 mx-auto rounded-xl border border-slate-800"
-                      />
-                      <p className="text-xs text-emerald-400 font-semibold flex items-center justify-center gap-1">
-                        <CheckCircle className="w-4 h-4" /> {uploadedFile?.name} ({(uploadedFile!.size / (1024 * 1024)).toFixed(1)} MB)
-                      </p>
-                      <label className="inline-block px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer">
-                        Choose Different Video
-                        <input
-                          type="file"
-                          accept="video/*"
-                          onChange={handleFileChange}
-                          className="hidden"
-                        />
-                      </label>
-                    </div>
-                  ) : (
-                    <label className="cursor-pointer block space-y-3">
-                      <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-400 mx-auto flex items-center justify-center">
-                        <FileVideo className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <span className="text-sm font-bold text-white block">
-                          Click to select or drag video file
-                        </span>
-                        <span className="text-xs text-slate-400">
-                          Supports MP4, MOV, WebM (up to 150MB)
+                      <div className="flex flex-wrap items-center justify-center gap-3">
+                        <button
+                          type="button"
+                          onClick={recordAgain}
+                          className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white text-xs font-semibold flex items-center gap-2"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Record Again</span>
+                        </button>
+                        <span className="text-center text-xs text-emerald-400 font-semibold flex items-center gap-1">
+                          <CheckCircle className="w-3.5 h-3.5" /> Video Ready ({formatTimer(recordingTime)})
                         </span>
                       </div>
-                      <span className="inline-block px-4 py-2 rounded-xl bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/30">
-                        Browse Files
-                      </span>
-                      <input
-                        type="file"
-                        accept="video/*"
-                        onChange={handleFileChange}
-                        className="hidden"
-                      />
-                    </label>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -625,7 +553,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
                 >
                   <option value="HOREMOW Member / Chapter">HOREMOW Member / Chapter</option>
                   <option value="Spiritual Son / Daughter">Spiritual Son / Daughter</option>
-                  <option value="Fellow Minister / Evangelist">Fellow Minister / Evangelist</option>
+                  <option value="Overseer">Overseer</option>
                   <option value="Conference & Camp Attendee">Conference & Camp Attendee</option>
                   <option value="Youth Fellowship">Youth Fellowship</option>
                   <option value="Online Believer (Global)">Online Believer (Global)</option>
@@ -648,7 +576,7 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-1">
                 <label className="block text-xs font-semibold text-slate-300">
                   How has Pastor Paul Rika's ministry & holiness teachings impacted you? <span className="text-amber-400">*</span>
                 </label>
@@ -691,7 +619,12 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
             )}
 
             {/* Action buttons */}
-            <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-800">
+            <div className="pt-3 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3 border-t border-slate-800">
+              {!recordedBlob && (
+                <p className="mr-auto text-center sm:text-left text-xs text-amber-200/80">
+                  Record and stop a video to unlock publishing.
+                </p>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -705,8 +638,8 @@ export const TributeUploadModal: React.FC<TributeUploadModalProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="px-6 py-3 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 hover:from-amber-300 hover:to-yellow-400 text-slate-950 font-black text-xs sm:text-sm shadow-xl flex items-center gap-2 disabled:opacity-50"
+                disabled={isSubmitting || !recordedBlob}
+                className="w-full sm:w-auto justify-center px-6 py-3 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-500 to-amber-500 hover:from-amber-300 hover:to-yellow-400 text-slate-950 font-black text-xs sm:text-sm shadow-xl flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? (
                   <>
