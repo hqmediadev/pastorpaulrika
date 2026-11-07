@@ -1,0 +1,6 @@
+{
+  "name": "Pastor Paul Rika Birthday Celebration & Tribute Hub",
+  "description": "Celebrating Pastor Paul Rika, International Director of Holiness Revival Movement Worldwide. Upload your video and text tributes.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
